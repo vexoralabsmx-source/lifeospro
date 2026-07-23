@@ -1,3 +1,4 @@
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { UserSettingRecord } from '../db/lifeDB';
 
 // Default Supabase config or environment variables
@@ -8,10 +9,70 @@ export const isSupabaseConfigured = () => {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 };
 
+export const getSupabaseClient = (): SupabaseClient | null => {
+  const url = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '';
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key') || '';
+  if (!url || !key) return null;
+  return createClient(url, key);
+};
+
 export const saveSupabaseCredentials = (url: string, key: string) => {
   localStorage.setItem('supabase_url', url.trim());
   localStorage.setItem('supabase_anon_key', key.trim());
 };
+
+/**
+ * Register account directly into Supabase Auth (Appears in Supabase Dashboard -> Authentication -> Users)
+ */
+export const signUpSupabaseAuth = async (email: string, password: string, displayName?: string) => {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          display_name: displayName
+        }
+      }
+    });
+
+    if (error) {
+      console.warn('Supabase Auth signUp notice:', error.message);
+    }
+    return data;
+  } catch (err) {
+    console.warn('Error signing up user in Supabase Auth:', err);
+    return null;
+  }
+};
+
+/**
+ * Sign in user with Supabase Auth
+ */
+export const signInSupabaseAuth = async (email: string, password: string) => {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) {
+      console.warn('Supabase Auth signIn notice:', error.message);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.warn('Error signing in with Supabase Auth:', err);
+    return null;
+  }
+};
+
 
 /**
  * Sync user settings & plan to Supabase Cloud

@@ -12,7 +12,7 @@ import {
   ShieldAlert, UserCheck, Crown, Search, Sparkles, 
   KeyRound, RefreshCw, CheckCircle2, Award, Users, Trash2, Plus, Database, Cloud
 } from 'lucide-react';
-import { syncUserSettingToCloud, saveSupabaseCredentials, isSupabaseConfigured, fetchAllCloudUsers } from '../utils/supabase';
+import { syncUserSettingToCloud, saveSupabaseCredentials, isSupabaseConfigured, fetchAllCloudUsers, signUpSupabaseAuth } from '../utils/supabase';
 
 export const AdminPanel: React.FC = () => {
   const { accountEmail, user, setPlan } = useApp();
@@ -144,6 +144,7 @@ export const AdminPanel: React.FC = () => {
     };
 
     await db.settings.put(newUserRecord);
+    await signUpSupabaseAuth(email, 'LifeOS_Pro_12345!', newUserRecord.displayName);
     await syncUserSettingToCloud(newUserRecord);
 
     setNewUserEmail('');

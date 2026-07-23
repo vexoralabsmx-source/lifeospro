@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db, seedDemoData, type UserSettingRecord } from '../db/lifeDB';
 import { hashPin, deriveKeyFromPin } from '../utils/security';
-import { syncUserSettingToCloud, fetchUserSettingFromCloud } from '../utils/supabase';
+import { syncUserSettingToCloud, fetchUserSettingFromCloud, signUpSupabaseAuth, signInSupabaseAuth } from '../utils/supabase';
 
 interface AppContextType {
   user: string | null; // Display name (ej. "Mike")
@@ -185,15 +185,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       await db.settings.put(initial);
       
-      // Sincronizar inmediatamente el nuevo registro con Supabase Cloud
-      syncUserSettingToCloud(initial);
+      // 1. Registrar cuenta directamente en Supabase Auth (Aparece en Supabase Dashboard -> Authentication -> Users)
+      await signUpSupabaseAuth(sanitizedEmail, password, chosenName);
+
+      // 2. Sincronizar tabla de configuraciones y planes en Supabase Cloud (user_settings)
+      await syncUserSettingToCloud(initial);
 
       localStorage.setItem('lifeos_user', sanitizedEmail);
       localStorage.setItem('lifeos_display_name', chosenName);
       setUser(chosenName);
       setAccountEmail(sanitizedEmail);
     } else {
-      // Login attempt
+      // Login attempt: Iniciar sesión en Supabase Auth si está configurado
+      await signInSupabaseAuth(sanitizedEmail, password);
+
       let settings = await db.settings.get(sanitizedEmail);
       
       // Si no existe en IndexedDB local, intentar traer desde Supabase Cloud
