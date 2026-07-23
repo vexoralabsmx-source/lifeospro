@@ -247,6 +247,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       localStorage.setItem('lifeos_user', sanitizedEmail);
       localStorage.setItem('lifeos_display_name', activeDisplayName);
+      if (settings.plan) {
+        localStorage.setItem('lifeos_plan_' + sanitizedEmail, settings.plan);
+        setPlanState(settings.plan);
+      }
+      if (settings.activeModules) {
+        setActiveModules(settings.activeModules);
+      }
       setUser(activeDisplayName);
       setAccountEmail(sanitizedEmail);
     }
