@@ -1,12 +1,15 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { UserSettingRecord } from '../db/lifeDB';
 
+const DEFAULT_SUPABASE_URL = 'https://svamiluhtvvbgjaciiqu.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN2YW1pbHVodHZ2YmdqYWNpaXF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM4NDk0NTIsImV4cCI6MjA5OTQyNTQ1Mn0.JcynGPo8N579tX7Bmm0ZmayeraskAkBLYJR_v6zm2mU';
+
 export const getSupabaseUrl = (): string => {
-  return (import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '').trim();
+  return (import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || DEFAULT_SUPABASE_URL).trim();
 };
 
 export const getSupabaseKey = (): string => {
-  return (import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key') || '').trim();
+  return (import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key') || DEFAULT_SUPABASE_ANON_KEY).trim();
 };
 
 export const isSupabaseConfigured = (): boolean => {

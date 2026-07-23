@@ -238,6 +238,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const activeDisplayName = settings.displayName || chosenName;
+      
+      // Sincronizar de forma transparente con Supabase Auth y Supabase Cloud por si la cuenta era únicamente local
+      signUpSupabaseAuth(sanitizedEmail, password, activeDisplayName);
+      syncUserSettingToCloud({ ...settings, displayName: activeDisplayName });
+
       localStorage.setItem('lifeos_user', sanitizedEmail);
       localStorage.setItem('lifeos_display_name', activeDisplayName);
       setUser(activeDisplayName);
