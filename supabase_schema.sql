@@ -497,8 +497,9 @@ create table if not exists public.user_settings (
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- Asegurar columna password_hash si la tabla ya existía anteriormente
+-- Asegurar columnas si la tabla ya existía anteriormente en Supabase
 alter table public.user_settings add column if not exists password_hash text;
+alter table public.user_settings add column if not exists updated_at timestamp with time zone default timezone('utc'::text, now());
 
 alter table public.user_settings enable row level security;
 drop policy if exists "Acceso completo a user_settings" on public.user_settings;
