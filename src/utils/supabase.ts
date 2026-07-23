@@ -96,9 +96,11 @@ export const syncUserSettingToCloud = async (setting: UserSettingRecord): Promis
   }
 
   const normalizedUserId = setting.userId.trim().toLowerCase();
+  let success = false;
 
+  // 1. Intentar upsert completo en user_settings
   try {
-    const payload = {
+    const fullPayload = {
       user_id: normalizedUserId,
       display_name: setting.displayName,
       password_hash: setting.passwordHash || null,
@@ -110,35 +112,51 @@ export const syncUserSettingToCloud = async (setting: UserSettingRecord): Promis
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await client
+    const { error: err1 } = await client
       .from('user_settings')
-      .upsert(payload, { onConflict: 'user_id' });
+      .upsert(fullPayload, { onConflict: 'user_id' });
 
-    if (error) {
-      console.warn('Error al sincronizar en user_settings vía SDK:', error.message);
+    if (!err1) {
+      success = true;
+      console.log('✅ Plan y configuración guardados en user_settings de Supabase.');
     } else {
-      console.log('✅ Registro sincronizado exitosamente en la tabla user_settings de Supabase.');
-    }
+      console.warn('Upsert completo falló en user_settings, probando payload simplificado:', err1.message);
+      // Fallback a payload esencial de plan (por si faltan columnas opcionales en Supabase)
+      const { error: err2 } = await client
+        .from('user_settings')
+        .upsert({
+          user_id: normalizedUserId,
+          plan: setting.plan || 'free',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
 
-    // Intentar sincronizar opcionalmente con la tabla secundaria "settings" si existe
-    try {
-      await client.from('settings').upsert({
-        user_id: normalizedUserId,
-        plan: setting.plan || 'free',
-        billing_cycle: setting.billingCycle || null,
-        pin_enabled: setting.pinEnabled || false,
-        theme: setting.theme || 'dark',
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'user_id' });
-    } catch {
-      // Ignorar si la tabla settings alternativa no está creada
+      if (!err2) {
+        success = true;
+        console.log('✅ Plan guardado con payload de plan en user_settings de Supabase.');
+      } else {
+        console.error('Error final en user_settings:', err2.message);
+      }
     }
-
-    return !error;
-  } catch (err) {
-    console.warn('Excepción al sincronizar configuración con Supabase Cloud:', err);
-    return false;
+  } catch (e) {
+    console.warn('Excepción al escribir en user_settings:', e);
   }
+
+  // 2. Sincronizar en paralelo con la tabla secundaria "settings" por si existe esa tabla en Supabase
+  try {
+    const { error: errSettings } = await client.from('settings').upsert({
+      user_id: normalizedUserId,
+      plan: setting.plan || 'free',
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
+
+    if (!errSettings) {
+      success = true;
+    }
+  } catch {
+    // Ignorar si la tabla "settings" alternativa no está en la base de datos
+  }
+
+  return success;
 };
 
 /**

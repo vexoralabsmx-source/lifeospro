@@ -76,61 +76,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [theme]);
 
   const refreshSettings = async () => {
-    const activeEmail = accountEmail || localStorage.getItem('lifeos_user');
+    const activeEmail = (accountEmail || localStorage.getItem('lifeos_user'))?.trim().toLowerCase();
     if (!activeEmail) return;
     try {
       let settings = await db.settings.get(activeEmail);
 
       // Check cloud settings
       const cloudSettings = await fetchUserSettingFromCloud(activeEmail);
-      if (cloudSettings && cloudSettings.plan) {
-        if (!settings) {
-          settings = {
-            userId: activeEmail,
-            displayName: cloudSettings.displayName || user || activeEmail.split('@')[0],
-            pinEnabled: cloudSettings.pinEnabled || false,
-            theme: cloudSettings.theme || 'dark',
-            activeModules: cloudSettings.activeModules || ['documents', 'health', 'passwords', 'networth', 'travel', 'habits', 'vehicles', 'expenses', 'subscriptions', 'warranties', 'packages', 'homes', 'tasks'],
-            notificationsEnabled: true,
-            plan: cloudSettings.plan || 'free'
-          };
-        } else {
-          settings = {
-            ...settings,
-            plan: cloudSettings.plan,
-            activeModules: cloudSettings.activeModules || settings.activeModules
-          };
-        }
-        await db.settings.put(settings);
+      
+      const localPlan = settings?.plan || (localStorage.getItem('lifeos_plan_' + activeEmail) as any) || 'free';
+      const cloudPlan = cloudSettings?.plan || 'free';
+
+      // Pick highest plan between local and cloud (lifetime > premium > free)
+      let finalPlan: 'free' | 'premium' | 'lifetime' = localPlan;
+      if (cloudPlan === 'lifetime' || localPlan === 'lifetime') {
+        finalPlan = 'lifetime';
+      } else if (cloudPlan === 'premium' || localPlan === 'premium') {
+        finalPlan = 'premium';
       }
 
       if (!settings) {
         // Create initial settings
         const initial: UserSettingRecord = {
           userId: activeEmail,
-          displayName: user || activeEmail.split('@')[0],
-          pinEnabled: false,
-          theme: 'dark',
-          activeModules: ['documents', 'health', 'passwords', 'networth', 'travel', 'habits', 'export', 'journal', 'pantry', 'pets', 'calculators', 'iceqr', 'vehicles', 'expenses', 'subscriptions', 'warranties', 'packages', 'homes', 'tasks'],
+          displayName: cloudSettings?.displayName || user || activeEmail.split('@')[0],
+          pinEnabled: cloudSettings?.pinEnabled || false,
+          theme: cloudSettings?.theme || 'dark',
+          activeModules: cloudSettings?.activeModules || ['documents', 'health', 'passwords', 'networth', 'travel', 'habits', 'export', 'journal', 'pantry', 'pets', 'calculators', 'iceqr', 'vehicles', 'expenses', 'subscriptions', 'warranties', 'packages', 'homes', 'tasks'],
           notificationsEnabled: true,
-          plan: 'free'
+          plan: finalPlan
         };
         await db.settings.put(initial);
         settings = initial;
+      } else {
+        settings = {
+          ...settings,
+          plan: finalPlan,
+          activeModules: cloudSettings?.activeModules || settings.activeModules
+        };
+        await db.settings.put(settings);
       }
+
+      localStorage.setItem('lifeos_plan_' + activeEmail, finalPlan);
 
       if (settings.displayName) {
         setUser(settings.displayName);
         localStorage.setItem('lifeos_display_name', settings.displayName);
       }
       setTheme(settings.theme === 'light' ? 'light' : 'dark');
-      setPlanState(settings.plan || 'free');
+      setPlanState(finalPlan);
       setBillingCycle(settings.billingCycle || null);
       setActiveModules(settings.activeModules || []);
       setPinEnabled(settings.pinEnabled || false);
       
-      // Sync local to cloud
-      syncUserSettingToCloud(settings);
+      // Sincronizar en la nube de forma transparente si la nube no tenía la última actualización
+      if (cloudPlan !== finalPlan) {
+        syncUserSettingToCloud(settings);
+      }
       
       // If PIN is enabled and we haven't decrypted key, lock the app
       if (settings.pinEnabled && !derivedKey) {
@@ -288,18 +290,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setPlan = async (newPlan: 'free' | 'premium' | 'lifetime', cycle?: 'monthly' | 'yearly') => {
     setPlanState(newPlan);
     if (cycle) setBillingCycle(cycle);
-    const activeEmail = accountEmail || localStorage.getItem('lifeos_user');
+    const activeEmail = (accountEmail || localStorage.getItem('lifeos_user'))?.trim().toLowerCase();
     if (activeEmail) {
-      const current = await db.settings.get(activeEmail);
-      if (current) {
-        const updated = { 
+      localStorage.setItem('lifeos_plan_' + activeEmail, newPlan);
+      let current = await db.settings.get(activeEmail);
+      if (!current) {
+        current = {
+          userId: activeEmail,
+          displayName: user || activeEmail.split('@')[0],
+          pinEnabled: false,
+          theme: 'dark',
+          activeModules: ['documents', 'health', 'passwords', 'networth', 'travel', 'habits', 'vehicles', 'expenses', 'subscriptions', 'warranties', 'packages', 'homes', 'tasks'],
+          notificationsEnabled: true,
+          plan: newPlan
+        };
+      } else {
+        current = { 
           ...current, 
           plan: newPlan, 
-          billingCycle: cycle || undefined 
+          billingCycle: cycle || current.billingCycle 
         };
-        await db.settings.put(updated);
-        syncUserSettingToCloud(updated);
       }
+      await db.settings.put(current);
+      await syncUserSettingToCloud(current);
     }
   };
 
