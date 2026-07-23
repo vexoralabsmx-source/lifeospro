@@ -504,6 +504,16 @@ alter table public.user_settings enable row level security;
 drop policy if exists "Acceso completo a user_settings" on public.user_settings;
 create policy "Acceso completo a user_settings" on public.user_settings for all using (true) with check (true);
 
+-- Copiar/Sincronizar todos los usuarios anteriores de auth.users hacia user_settings
+insert into public.user_settings (user_id, display_name, plan, updated_at)
+select 
+  email as user_id, 
+  coalesce(raw_user_meta_data->>'display_name', split_part(email, '@', 1)) as display_name,
+  'free' as plan,
+  now() as updated_at
+from auth.users
+on conflict (user_id) do nothing;
+
 -- Trigger automático para crear registro en user_settings al registrarse en Supabase Auth
 create or replace function public.handle_new_user()
 returns trigger as $$
