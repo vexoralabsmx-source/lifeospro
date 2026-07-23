@@ -502,7 +502,31 @@ alter table public.user_settings add column if not exists password_hash text;
 
 alter table public.user_settings enable row level security;
 drop policy if exists "Acceso completo a user_settings" on public.user_settings;
-create policy "Acceso completo a user_settings" on public.user_settings for all using (true);
+create policy "Acceso completo a user_settings" on public.user_settings for all using (true) with check (true);
+
+-- Trigger automático para crear registro en user_settings al registrarse en Supabase Auth
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.user_settings (user_id, display_name, plan, updated_at)
+  values (
+    new.email,
+    coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1)),
+    'free',
+    now()
+  )
+  on conflict (user_id) do update set
+    display_name = excluded.display_name,
+    updated_at = now();
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- Recrear el trigger en auth.users
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
 
 
 -- 23. TABLA: CALENDAR_EVENTS (Eventos Personalizados, Cumpleaños y Recordatorios)
@@ -518,7 +542,8 @@ create table if not exists public.calendar_events (
 );
 alter table public.calendar_events enable row level security;
 drop policy if exists "Acceso a eventos de calendario propios" on public.calendar_events;
-create policy "Acceso a eventos de calendario propios" on public.calendar_events for all using (auth.uid()::text = user_id or user_id = 'local_user');
+create policy "Acceso a eventos de calendario propios" on public.calendar_events for all using (auth.uid()::text = user_id or user_id = 'local_user') with check (auth.uid()::text = user_id or user_id = 'local_user');
+
 
 
 

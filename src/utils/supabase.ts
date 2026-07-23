@@ -89,45 +89,34 @@ export const signInSupabaseAuth = async (email: string, password: string) => {
  * Sync user settings & plan to Supabase Cloud
  */
 export const syncUserSettingToCloud = async (setting: UserSettingRecord): Promise<boolean> => {
-  const url = getSupabaseUrl();
-  const key = getSupabaseKey();
-  
-  if (!url || !key) {
+  const client = getSupabaseClient();
+  if (!client) {
     console.warn('Supabase URL/Key no configurados para sincronizar usuario.');
     return false;
   }
 
   try {
-    const res = await fetch(`${url}/rest/v1/user_settings?on_conflict=user_id`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-        'Prefer': 'resolution=merge-duplicates'
-      },
-      body: JSON.stringify({
-        user_id: setting.userId,
-        display_name: setting.displayName,
-        password_hash: setting.passwordHash || null,
-        plan: setting.plan || 'free',
-        billing_cycle: setting.billingCycle || null,
-        active_modules: setting.activeModules || [],
-        pin_enabled: setting.pinEnabled || false,
-        theme: setting.theme || 'dark',
-        updated_at: new Date().toISOString()
-      })
-    });
+    const { error } = await client.from('user_settings').upsert({
+      user_id: setting.userId,
+      display_name: setting.displayName,
+      password_hash: setting.passwordHash || null,
+      plan: setting.plan || 'free',
+      billing_cycle: setting.billingCycle || null,
+      active_modules: setting.activeModules || [],
+      pin_enabled: setting.pinEnabled || false,
+      theme: setting.theme || 'dark',
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' });
 
-    if (!res.ok) {
-      console.warn('Respuesta no exitosa al sincronizar user_settings:', res.status, res.statusText);
-    } else {
-      console.log('✅ Registro sincronizado en la tabla user_settings de Supabase.');
+    if (error) {
+      console.warn('Error al sincronizar en user_settings vía SDK:', error.message);
+      return false;
     }
 
-    return res.ok;
+    console.log('✅ Registro sincronizado exitosamente en la tabla user_settings de Supabase.');
+    return true;
   } catch (err) {
-    console.warn('Error al sincronizar configuración con Supabase Cloud:', err);
+    console.warn('Excepción al sincronizar configuración con Supabase Cloud:', err);
     return false;
   }
 };
@@ -136,35 +125,29 @@ export const syncUserSettingToCloud = async (setting: UserSettingRecord): Promis
  * Fetch latest user setting & plan from Supabase Cloud
  */
 export const fetchUserSettingFromCloud = async (userId: string): Promise<Partial<UserSettingRecord> | null> => {
-  const url = getSupabaseUrl();
-  const key = getSupabaseKey();
-
-  if (!url || !key) return null;
+  const client = getSupabaseClient();
+  if (!client) return null;
 
   try {
-    const res = await fetch(`${url}/rest/v1/user_settings?user_id=eq.${encodeURIComponent(userId)}&select=*`, {
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`
-      }
-    });
+    const { data, error } = await client
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .limit(1);
 
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data && data.length > 0) {
-      const row = data[0];
-      return {
-        userId: row.user_id,
-        displayName: row.display_name,
-        passwordHash: row.password_hash,
-        plan: row.plan,
-        billingCycle: row.billing_cycle,
-        activeModules: row.active_modules,
-        pinEnabled: row.pin_enabled,
-        theme: row.theme
-      };
-    }
-    return null;
+    if (error || !data || data.length === 0) return null;
+
+    const row = data[0];
+    return {
+      userId: row.user_id,
+      displayName: row.display_name,
+      passwordHash: row.password_hash,
+      plan: row.plan,
+      billingCycle: row.billing_cycle,
+      activeModules: row.active_modules,
+      pinEnabled: row.pin_enabled,
+      theme: row.theme
+    };
   } catch (err) {
     console.warn('Error al consultar configuración desde Supabase Cloud:', err);
     return null;
@@ -175,21 +158,20 @@ export const fetchUserSettingFromCloud = async (userId: string): Promise<Partial
  * Fetch all registered accounts from Supabase Cloud (Admin view)
  */
 export const fetchAllCloudUsers = async (): Promise<UserSettingRecord[]> => {
-  const url = getSupabaseUrl();
-  const key = getSupabaseKey();
-
-  if (!url || !key) return [];
+  const client = getSupabaseClient();
+  if (!client) return [];
 
   try {
-    const res = await fetch(`${url}/rest/v1/user_settings?select=*&order=updated_at.desc`, {
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`
-      }
-    });
+    const { data, error } = await client
+      .from('user_settings')
+      .select('*')
+      .order('updated_at', { ascending: false });
 
-    if (!res.ok) return [];
-    const data = await res.json();
+    if (error || !data) {
+      console.warn('Error al consultar todos los usuarios de Supabase Cloud:', error?.message);
+      return [];
+    }
+
     return data.map((row: any) => ({
       userId: row.user_id,
       displayName: row.display_name || row.user_id.split('@')[0],
@@ -198,6 +180,7 @@ export const fetchAllCloudUsers = async (): Promise<UserSettingRecord[]> => {
       billingCycle: row.billing_cycle,
       activeModules: row.active_modules || [],
       pinEnabled: row.pin_enabled || false,
+      notificationsEnabled: true,
       theme: row.theme || 'dark'
     }));
   } catch (err) {
