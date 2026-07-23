@@ -95,9 +95,11 @@ export const syncUserSettingToCloud = async (setting: UserSettingRecord): Promis
     return false;
   }
 
+  const normalizedUserId = setting.userId.trim().toLowerCase();
+
   try {
-    const { error } = await client.from('user_settings').upsert({
-      user_id: setting.userId,
+    const payload = {
+      user_id: normalizedUserId,
       display_name: setting.displayName,
       password_hash: setting.passwordHash || null,
       plan: setting.plan || 'free',
@@ -106,15 +108,33 @@ export const syncUserSettingToCloud = async (setting: UserSettingRecord): Promis
       pin_enabled: setting.pinEnabled || false,
       theme: setting.theme || 'dark',
       updated_at: new Date().toISOString()
-    }, { onConflict: 'user_id' });
+    };
+
+    const { error } = await client
+      .from('user_settings')
+      .upsert(payload, { onConflict: 'user_id' });
 
     if (error) {
       console.warn('Error al sincronizar en user_settings vía SDK:', error.message);
-      return false;
+    } else {
+      console.log('✅ Registro sincronizado exitosamente en la tabla user_settings de Supabase.');
     }
 
-    console.log('✅ Registro sincronizado exitosamente en la tabla user_settings de Supabase.');
-    return true;
+    // Intentar sincronizar opcionalmente con la tabla secundaria "settings" si existe
+    try {
+      await client.from('settings').upsert({
+        user_id: normalizedUserId,
+        plan: setting.plan || 'free',
+        billing_cycle: setting.billingCycle || null,
+        pin_enabled: setting.pinEnabled || false,
+        theme: setting.theme || 'dark',
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+    } catch {
+      // Ignorar si la tabla settings alternativa no está creada
+    }
+
+    return !error;
   } catch (err) {
     console.warn('Excepción al sincronizar configuración con Supabase Cloud:', err);
     return false;
@@ -128,11 +148,13 @@ export const fetchUserSettingFromCloud = async (userId: string): Promise<Partial
   const client = getSupabaseClient();
   if (!client) return null;
 
+  const normalizedUserId = userId.trim().toLowerCase();
+
   try {
     const { data, error } = await client
       .from('user_settings')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', normalizedUserId)
       .limit(1);
 
     if (error || !data || data.length === 0) return null;
@@ -186,6 +208,25 @@ export const fetchAllCloudUsers = async (): Promise<UserSettingRecord[]> => {
   } catch (err) {
     console.warn('Error al consultar todos los usuarios de Supabase Cloud:', err);
     return [];
+  }
+};
+
+/**
+ * Record a Clip payment activation attempt into Supabase for audit
+ */
+export const recordClipPaymentInCloud = async (userId: string, plan: string, reference?: string) => {
+  const client = getSupabaseClient();
+  if (!client) return;
+
+  try {
+    await client.from('activities').insert({
+      user_id: userId.trim().toLowerCase(),
+      action: 'CLIP_PAYMENT_ACTIVATION',
+      module: 'pricing',
+      details: `Plan ${plan} activado con Clip. Ref: ${reference || 'N/A'}`
+    });
+  } catch {
+    // Audit logging failure is non-blocking
   }
 };
 

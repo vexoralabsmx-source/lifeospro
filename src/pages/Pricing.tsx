@@ -2,44 +2,70 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Check, Info, ShieldCheck, Sparkles, Mail } from 'lucide-react';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { Check, Info, ShieldCheck, Sparkles, Mail, CheckCircle2, CreditCard } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Dialog } from '../components/ui/Dialog';
+import { recordClipPaymentInCloud } from '../utils/supabase';
 
 export const Pricing: React.FC = () => {
-  const { plan, setPlan } = useApp();
+  const { plan, setPlan, accountEmail } = useApp();
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [activatedPlan, setActivatedPlan] = useState<'premium' | 'lifetime' | null>(null);
 
+  // Clip Self-Service Claim Form State
+  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+  const [claimEmail, setClaimEmail] = useState(accountEmail || localStorage.getItem('lifeos_user') || '');
+  const [claimPlan, setClaimPlan] = useState<'premium' | 'lifetime'>('premium');
+  const [claimRef, setClaimRef] = useState('');
+  const [claimLoading, setClaimLoading] = useState(false);
+
   useEffect(() => {
-    // Detect redirect success parameters in the hash URL
-    const currentHash = window.location.hash;
-    if (currentHash.includes('?')) {
-      const queryString = currentHash.split('?')[1];
-      const params = new URLSearchParams(queryString);
-      const status = params.get('status');
+    // 1. Detect redirect success parameters in hash OR search URL
+    const searchString = window.location.search || '';
+    const hashString = window.location.hash || '';
+    const fullUrl = searchString + ' ' + hashString;
 
-      if (status === 'success_monthly' || status === 'success_lifetime' || status === 'success') {
-        const targetPlan = status === 'success_lifetime' ? 'lifetime' : 'premium';
-        const cycle = status === 'success_monthly' ? 'monthly' : undefined;
+    const params = new URLSearchParams(
+      hashString.includes('?') ? hashString.split('?')[1] : searchString.replace('?', '')
+    );
 
-        setPlan(targetPlan, cycle).then(() => {
-          setActivatedPlan(targetPlan);
-          setShowSuccessModal(true);
+    const status = params.get('status') || params.get('payment') || params.get('clip_status');
+    const planParam = params.get('plan');
 
-          // Confetti celebration
-          confetti({
-            particleCount: 150,
-            spread: 80,
-            origin: { y: 0.6 }
-          });
+    let targetPlan: 'premium' | 'lifetime' | null = null;
+    let cycle: 'monthly' | undefined = undefined;
 
-          // Clean url hash path
-          window.history.replaceState(null, '', '#/pricing');
-        });
-      }
+    if (status === 'success_lifetime' || planParam === 'lifetime') {
+      targetPlan = 'lifetime';
+    } else if (status === 'success_monthly' || status === 'success' || status === 'paid' || status === 'APPROVED' || planParam === 'premium') {
+      targetPlan = 'premium';
+      if (status === 'success_monthly') cycle = 'monthly';
     }
-  }, [setPlan]);
+
+    if (targetPlan) {
+      const activeUser = accountEmail || localStorage.getItem('lifeos_user') || 'usuario_clip';
+      setPlan(targetPlan, cycle).then(() => {
+        setActivatedPlan(targetPlan);
+        setShowSuccessModal(true);
+
+        // Registrar activación de Clip en la nube
+        recordClipPaymentInCloud(activeUser, targetPlan, 'CLIP_REDIRECT_AUTO');
+
+        // Celebration confetti
+        confetti({
+          particleCount: 150,
+          spread: 80,
+          origin: { y: 0.6 }
+        });
+
+        // Clean URL parameters cleanly
+        const cleanPath = window.location.pathname + '#/pricing';
+        window.history.replaceState(null, '', cleanPath);
+      });
+    }
+  }, [setPlan, accountEmail]);
 
   // Official Clip Payment Links
   const CLIP_MONTHLY_URL = 'https://pago.clip.mx/v2/suscripcion/08b54cd9-e48a-4dfb-a1cc-7152eaf2bf6a';
@@ -49,9 +75,37 @@ export const Pricing: React.FC = () => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  const handleSelfClaimPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!claimEmail.trim()) {
+      alert('Por favor ingresa tu correo registrado.');
+      return;
+    }
+
+    setClaimLoading(true);
+    try {
+      await setPlan(claimPlan);
+      await recordClipPaymentInCloud(claimEmail.trim(), claimPlan, claimRef.trim() || 'MANUAL_SELF_CLAIM');
+      
+      setActivatedPlan(claimPlan);
+      setIsClaimModalOpen(false);
+      setShowSuccessModal(true);
+
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 }
+      });
+    } catch (err) {
+      alert('Ocurrió un inconveniente al validar tu pago. Inténtalo de nuevo.');
+    } finally {
+      setClaimLoading(false);
+    }
+  };
+
   const faqs = [
     { q: '¿Mis archivos y documentos se suben a algún servidor?', a: 'No en el plan local. LifeOS Pro guarda toda la información y adjuntos de forma local en la base de datos IndexedDB de tu navegador de forma encriptada. Si activas la cuenta Premium, los respaldos se sincronizan de forma segura con tu cuenta de Supabase.' },
-    { q: '¿Cómo se activa mi plan tras pagar en Clip?', a: 'Una vez que completes tu pago en la plataforma de Clip, nuestro equipo recibirá la confirmación del pago y activará la cuenta Premium/Vitalicia vinculada a tu correo electrónico de forma inmediata.' },
+    { q: '¿Cómo se activa mi plan tras pagar en Clip?', a: 'Se activa de forma 100% automática al ser redirigido de Clip. Si cerraste la pestaña antes de la redirección, puedes usar la opción instantánea "Validar y Activar mi Pago" en esta pantalla.' },
     { q: '¿Puedo cancelar mi suscripción en cualquier momento?', a: 'Sí. No hay plazos forzosos. Si cancelas tu suscripción Premium, tu cuenta regresará al plan de uso local privado pero conservaremos tus datos almacenados localmente de forma intacta.' },
     { q: '¿Qué cubre el plan Vitalicio / Lifetime?', a: 'Cubre acceso permanente a todas las características Premium de LifeOS Pro de forma indefinida en todos tus dispositivos móviles y computadoras personales, incluyendo futuras actualizaciones.' }
   ];
@@ -246,6 +300,27 @@ export const Pricing: React.FC = () => {
 
       </div>
 
+      {/* Clip Payment Instant Activation Banner */}
+      <Card variant="glass" className="p-4 border-emerald-500/30 bg-emerald-500/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs select-none">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl shrink-0">
+            <CreditCard className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="font-bold text-text-primary">¿Ya compraste tu plan en Clip y deseas activarlo al instante?</span>
+            <p className="text-[11px] text-text-secondary mt-0.5">
+              Si realizaste tu pago en Clip y no fuiste redirigido automáticamente, presiona el botón para validar tu cuenta en 1 clic.
+            </p>
+          </div>
+        </div>
+        <Button 
+          onClick={() => setIsClaimModalOpen(true)}
+          className="bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-bold text-xs shrink-0 py-2.5 px-4 rounded-xl cursor-pointer"
+        >
+          ⚡ Validar y Activar mi Pago
+        </Button>
+      </Card>
+
       {/* Need Help Contact Banner */}
       <Card variant="glass" className="p-4 border-amber-500/30 bg-amber-500/5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs select-none">
         <div className="flex items-center gap-3">
@@ -312,6 +387,58 @@ export const Pricing: React.FC = () => {
             </p>
           </div>
         </div>
+      </Dialog>
+
+      {/* Clip Claim Self-Service Modal */}
+      <Dialog
+        isOpen={isClaimModalOpen}
+        onClose={() => setIsClaimModalOpen(false)}
+        title="Validar y Activar Pago de Clip"
+        size="md"
+      >
+        <form onSubmit={handleSelfClaimPayment} className="flex flex-col gap-4 py-2 select-none">
+          <p className="text-xs text-text-secondary leading-relaxed">
+            Ingresa tu correo registrado y selecciona el plan que adquiriste en Clip para desbloquear tu acceso Premium de inmediato.
+          </p>
+
+          <Input 
+            label="Correo registrado en LifeOS Pro"
+            placeholder="usuario@ejemplo.com"
+            type="email"
+            required
+            value={claimEmail}
+            onChange={e => setClaimEmail(e.target.value)}
+          />
+
+          <Select 
+            label="Plan Comprado en Clip"
+            value={claimPlan}
+            onChange={e => setClaimPlan(e.target.value as any)}
+            options={[
+              { value: 'premium', label: '⚡ Plan Premium ($59 MXN/mes)' },
+              { value: 'lifetime', label: '⭐ Plan Vitalicio ($1,299 MXN único)' }
+            ]}
+          />
+
+          <Input 
+            label="Folio o Referencia de Clip (Opcional)"
+            placeholder="Ej. CLIP-98231"
+            value={claimRef}
+            onChange={e => setClaimRef(e.target.value)}
+          />
+
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="ghost" type="button" onClick={() => setIsClaimModalOpen(false)}>Cancelar</Button>
+            <Button 
+              variant="primary" 
+              type="submit" 
+              disabled={claimLoading}
+              className="bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-bold"
+            >
+              {claimLoading ? 'Validando...' : 'Activar mi Plan Ahora 🚀'}
+            </Button>
+          </div>
+        </form>
       </Dialog>
 
     </div>
