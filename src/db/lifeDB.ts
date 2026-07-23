@@ -375,6 +375,38 @@ class LifeOSDatabase extends Dexie {
 
 export const db = new LifeOSDatabase();
 
+// --- AUTOMATIC CLOUD SYNC HOOKS FOR PREMIUM / LIFETIME USERS ---
+import { pushRecordToCloud, deleteRecordFromCloud } from '../utils/cloudSync';
+
+const SYNCED_TABLES = [
+  'documents', 'vehicles', 'vehicleServices', 'expenses', 'subscriptions', 
+  'warranties', 'packages', 'homes', 'homeMaintenance', 'tasks', 'activities', 
+  'healthRecords', 'passwordRecords', 'financialGoals', 'travelRecords', 
+  'habitRecords', 'quickNoteRecords', 'journalRecords', 'pantryItems', 
+  'petRecords', 'calendarEvents'
+];
+
+SYNCED_TABLES.forEach(tableName => {
+  const table = (db as any)[tableName];
+  if (table) {
+    table.hook('creating', function (this: any, primKey: any, obj: any) {
+      this.onsuccess = function (createdId: any) {
+        pushRecordToCloud(tableName, { ...obj, id: createdId });
+      };
+    });
+
+    table.hook('updating', function (this: any, modifications: any, primKey: any, obj: any) {
+      this.onsuccess = function (updatedObj: any) {
+        pushRecordToCloud(tableName, updatedObj || { ...obj, ...modifications, id: primKey });
+      };
+    });
+
+    table.hook('deleting', function (this: any, primKey: any, obj: any) {
+      deleteRecordFromCloud(tableName, primKey, obj?.userId);
+    });
+  }
+});
+
 // --- DEMO DATA SEEDING FUNCTION (DESACTIVADA) ---
 
 export async function seedDemoData(userId: string = 'mike_demo') {

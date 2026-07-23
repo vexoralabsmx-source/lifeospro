@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { db, seedDemoData, type UserSettingRecord } from '../db/lifeDB';
 import { hashPin, deriveKeyFromPin } from '../utils/security';
 import { syncUserSettingToCloud, fetchUserSettingFromCloud, signUpSupabaseAuth, signInSupabaseAuth } from '../utils/supabase';
+import { syncAllCloudDataToLocal, uploadAllLocalDataToCloud } from '../utils/cloudSync';
 
 interface AppContextType {
   user: string | null; // Display name (ej. "Mike")
@@ -122,6 +123,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setActiveModules(settings.activeModules || []);
       setPinEnabled(settings.pinEnabled || false);
       
+      // Sincronizar automáticamente todos los datos del usuario desde la nube si es Premium o Vitalicio
+      if (activePlan === 'premium' || activePlan === 'lifetime') {
+        syncAllCloudDataToLocal(activeEmail);
+      }
+
       // If PIN is enabled and we haven't decrypted key, lock the app
       if (settings.pinEnabled && !derivedKey) {
         setIsLocked(true);
@@ -244,6 +250,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       setUser(activeDisplayName);
       setAccountEmail(sanitizedEmail);
+
+      if (settings.plan === 'premium' || settings.plan === 'lifetime') {
+        syncAllCloudDataToLocal(sanitizedEmail);
+      }
     }
   };
 
@@ -308,6 +318,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       await db.settings.put(current);
       await syncUserSettingToCloud(current);
+
+      if (newPlan === 'premium' || newPlan === 'lifetime') {
+        uploadAllLocalDataToCloud(activeEmail);
+      }
     }
   };
 
