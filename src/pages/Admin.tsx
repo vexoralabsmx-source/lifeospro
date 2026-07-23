@@ -47,30 +47,18 @@ export const AdminPanel: React.FC = () => {
       for (const u of users) {
         const email = u.userId.trim().toLowerCase();
         const existing = await db.settings.get(email);
-        if (!existing) {
-          await db.settings.put({ ...u, userId: email });
-        } else {
-          const currentLocalPlan = existing.plan || 'free';
-          const cloudPlan = u.plan || 'free';
-          
-          let resolvedPlan: 'free' | 'premium' | 'lifetime' = currentLocalPlan;
-          if (cloudPlan === 'lifetime' || currentLocalPlan === 'lifetime') {
-            resolvedPlan = 'lifetime';
-          } else if (cloudPlan === 'premium' || currentLocalPlan === 'premium') {
-            resolvedPlan = 'premium';
-          }
+        const cloudPlan = u.plan || 'free';
 
-          const updatedLocal = {
+        if (!existing) {
+          await db.settings.put({ ...u, userId: email, plan: cloudPlan });
+        } else if (existing.plan !== cloudPlan || existing.displayName !== u.displayName) {
+          await db.settings.put({
             ...existing,
             userId: email,
-            plan: resolvedPlan,
-            displayName: existing.displayName || u.displayName
-          };
-          await db.settings.put(updatedLocal);
-
-          if (cloudPlan !== resolvedPlan) {
-            syncUserSettingToCloud(updatedLocal);
-          }
+            plan: cloudPlan,
+            displayName: u.displayName || existing.displayName
+          });
+          localStorage.setItem('lifeos_plan_' + email, cloudPlan);
         }
       }
     } catch (err) {
@@ -109,22 +97,12 @@ export const AdminPanel: React.FC = () => {
     const key = u.userId.toLowerCase().trim();
     const existing = mergedUsersMap.get(key);
 
-    const localPlan = existing?.plan || 'free';
-    const cloudPlan = u.plan || 'free';
-
-    let finalPlan: 'free' | 'premium' | 'lifetime' = 'free';
-    if (localPlan === 'lifetime' || cloudPlan === 'lifetime') {
-      finalPlan = 'lifetime';
-    } else if (localPlan === 'premium' || cloudPlan === 'premium') {
-      finalPlan = 'premium';
-    }
-
     mergedUsersMap.set(key, {
       ...existing,
       ...u,
       userId: key,
       displayName: u.displayName || existing?.displayName || key.split('@')[0],
-      plan: finalPlan
+      plan: u.plan || 'free'
     });
   });
 
@@ -143,15 +121,16 @@ export const AdminPanel: React.FC = () => {
       plan: newPlan
     };
 
-    // 1. Actualizar IndexedDB Local
+    // 1. Actualizar IndexedDB Local & LocalStorage
     await db.settings.put(updatedRecord);
+    localStorage.setItem('lifeos_plan_' + email, newPlan);
 
     // 2. Sincronizar con Supabase Cloud
     const cloudOk = await syncUserSettingToCloud(updatedRecord);
 
     // 3. Actualizar estado cloudUsers en memoria inmediatamente
     setCloudUsers(prev => {
-      const idx = prev.findIndex(u => u.userId.toLowerCase() === email);
+      const idx = prev.findIndex(u => u.userId.toLowerCase().trim() === email);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = { ...next[idx], plan: newPlan };
@@ -161,14 +140,14 @@ export const AdminPanel: React.FC = () => {
     });
 
     // 4. Si el usuario modificado es el actual, actualizar context de sesión
-    if (email === accountEmail?.toLowerCase()) {
+    if (email === accountEmail?.toLowerCase().trim()) {
       await setPlan(newPlan);
     }
 
     if (cloudOk) {
       setToastMessage(`✅ ¡Éxito! Plan de "${email}" asignado a [${newPlan.toUpperCase()}] y guardado en Supabase Nube.`);
     } else {
-      setToastMessage(`⚠️ Plan de "${email}" guardado LOCALMENTE como [${newPlan.toUpperCase()}]. (Verifica la conexión a Supabase si deseas sincronizar en la nube).`);
+      setToastMessage(`⚠️ Plan de "${email}" guardado LOCALMENTE como [${newPlan.toUpperCase()}].`);
     }
 
     setTimeout(() => setToastMessage(null), 6000);

@@ -84,16 +84,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Check cloud settings
       const cloudSettings = await fetchUserSettingFromCloud(activeEmail);
       
+      const cloudPlan = cloudSettings?.plan;
       const localPlan = settings?.plan || (localStorage.getItem('lifeos_plan_' + activeEmail) as any) || 'free';
-      const cloudPlan = cloudSettings?.plan || 'free';
-
-      // Pick highest plan between local and cloud (lifetime > premium > free)
-      let finalPlan: 'free' | 'premium' | 'lifetime' = localPlan;
-      if (cloudPlan === 'lifetime' || localPlan === 'lifetime') {
-        finalPlan = 'lifetime';
-      } else if (cloudPlan === 'premium' || localPlan === 'premium') {
-        finalPlan = 'premium';
-      }
+      const activePlan = cloudPlan || localPlan;
 
       if (!settings) {
         // Create initial settings
@@ -104,35 +97,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           theme: cloudSettings?.theme || 'dark',
           activeModules: cloudSettings?.activeModules || ['documents', 'health', 'passwords', 'networth', 'travel', 'habits', 'export', 'journal', 'pantry', 'pets', 'calculators', 'iceqr', 'vehicles', 'expenses', 'subscriptions', 'warranties', 'packages', 'homes', 'tasks'],
           notificationsEnabled: true,
-          plan: finalPlan
+          plan: activePlan
         };
         await db.settings.put(initial);
         settings = initial;
-      } else {
+      } else if (activePlan !== settings.plan) {
         settings = {
           ...settings,
-          plan: finalPlan,
+          plan: activePlan,
           activeModules: cloudSettings?.activeModules || settings.activeModules
         };
         await db.settings.put(settings);
       }
 
-      localStorage.setItem('lifeos_plan_' + activeEmail, finalPlan);
+      localStorage.setItem('lifeos_plan_' + activeEmail, activePlan);
 
       if (settings.displayName) {
         setUser(settings.displayName);
         localStorage.setItem('lifeos_display_name', settings.displayName);
       }
       setTheme(settings.theme === 'light' ? 'light' : 'dark');
-      setPlanState(finalPlan);
+      setPlanState(activePlan);
       setBillingCycle(settings.billingCycle || null);
       setActiveModules(settings.activeModules || []);
       setPinEnabled(settings.pinEnabled || false);
-      
-      // Sincronizar en la nube de forma transparente si la nube no tenía la última actualización
-      if (cloudPlan !== finalPlan) {
-        syncUserSettingToCloud(settings);
-      }
       
       // If PIN is enabled and we haven't decrypted key, lock the app
       if (settings.pinEnabled && !derivedKey) {

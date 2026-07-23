@@ -248,4 +248,81 @@ export const recordClipPaymentInCloud = async (userId: string, plan: string, ref
   }
 };
 
+/**
+ * Calendar Events Cloud Synchronization
+ */
+export const syncCalendarEventToCloud = async (event: any): Promise<boolean> => {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from('calendar_events').insert({
+      user_id: event.userId.trim().toLowerCase(),
+      title: event.title,
+      date: event.date,
+      time: event.time || null,
+      category: event.category || 'birthday',
+      notes: event.notes || null,
+      created_at: event.createdAt || new Date().toISOString()
+    });
+
+    if (error) {
+      console.warn('Error al sincronizar evento de calendario en Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Excepción al sincronizar evento de calendario:', err);
+    return false;
+  }
+};
+
+export const fetchCalendarEventsFromCloud = async (userId: string): Promise<any[]> => {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  const normalizedUserId = userId.trim().toLowerCase();
+
+  try {
+    const { data, error } = await client
+      .from('calendar_events')
+      .select('*')
+      .eq('user_id', normalizedUserId);
+
+    if (error || !data) return [];
+
+    return data.map((row: any) => ({
+      userId: row.user_id,
+      title: row.title,
+      date: row.date,
+      time: row.time || undefined,
+      category: row.category || 'birthday',
+      notes: row.notes || undefined,
+      createdAt: row.created_at
+    }));
+  } catch (err) {
+    console.warn('Error al obtener eventos del calendario desde Supabase:', err);
+    return [];
+  }
+};
+
+export const deleteCalendarEventFromCloud = async (title: string, date: string, userId: string): Promise<boolean> => {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client
+      .from('calendar_events')
+      .delete()
+      .eq('user_id', userId.trim().toLowerCase())
+      .eq('title', title)
+      .eq('date', date);
+
+    return !error;
+  } catch {
+    return false;
+  }
+};
+
+
 

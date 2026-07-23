@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type CalendarEventRecord } from '../db/lifeDB';
 import { useApp } from '../context/AppContext';
@@ -13,6 +13,7 @@ import {
   FileText, Car, Shield, CreditCard, Package, CheckSquare, Heart,
   Cake, PartyPopper, Bell, Briefcase, Plus, Trash2, Clock, Sparkles, Filter
 } from 'lucide-react';
+import { syncCalendarEventToCloud, fetchCalendarEventsFromCloud, deleteCalendarEventFromCloud } from '../utils/supabase';
 
 export interface CalendarEventItem {
   id: string;
@@ -41,6 +42,27 @@ export const CalendarView: React.FC = () => {
   const [eventTime, setEventTime] = useState('');
   const [eventCategory, setEventCategory] = useState<'birthday' | 'anniversary' | 'event' | 'reminder' | 'meeting' | 'other'>('birthday');
   const [eventNotes, setEventNotes] = useState('');
+
+  // Sincronizar eventos de la nube en segundo plano al cargar
+  useEffect(() => {
+    const loadCloudCalendarEvents = async () => {
+      if (!activeUserId || activeUserId === 'local_user') return;
+      try {
+        const cloudEvents = await fetchCalendarEventsFromCloud(activeUserId);
+        for (const ev of cloudEvents) {
+          const existing = await db.calendarEvents
+            .where({ userId: activeUserId, title: ev.title, date: ev.date })
+            .first();
+          if (!existing) {
+            await db.calendarEvents.add(ev);
+          }
+        }
+      } catch (err) {
+        console.warn('Error sincronizando calendario desde Supabase Nube:', err);
+      }
+    };
+    loadCloudCalendarEvents();
+  }, [activeUserId]);
 
   // Dexie Queries
   const customEvents = useLiveQuery(() => db.calendarEvents.toArray(), []) || [];
@@ -286,6 +308,7 @@ export const CalendarView: React.FC = () => {
     };
 
     await db.calendarEvents.add(newRecord);
+    syncCalendarEventToCloud(newRecord);
 
     // Log Activity
     await db.activities.add({
@@ -301,6 +324,10 @@ export const CalendarView: React.FC = () => {
 
   const handleDeleteCustomEvent = async (dbId: number) => {
     if (confirm('¿Deseas eliminar este evento del calendario?')) {
+      const record = await db.calendarEvents.get(dbId);
+      if (record) {
+        deleteCalendarEventFromCloud(record.title, record.date, activeUserId);
+      }
       await db.calendarEvents.delete(dbId);
       if (selectedDayEvents) {
         setSelectedDayEvents({
