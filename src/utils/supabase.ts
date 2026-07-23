@@ -1,17 +1,21 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { UserSettingRecord } from '../db/lifeDB';
 
-// Default Supabase config or environment variables
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key') || '';
+export const getSupabaseUrl = (): string => {
+  return (import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '').trim();
+};
 
-export const isSupabaseConfigured = () => {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+export const getSupabaseKey = (): string => {
+  return (import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key') || '').trim();
+};
+
+export const isSupabaseConfigured = (): boolean => {
+  return Boolean(getSupabaseUrl() && getSupabaseKey());
 };
 
 export const getSupabaseClient = (): SupabaseClient | null => {
-  const url = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '';
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key') || '';
+  const url = getSupabaseUrl();
+  const key = getSupabaseKey();
   if (!url || !key) return null;
   return createClient(url, key);
 };
@@ -26,7 +30,10 @@ export const saveSupabaseCredentials = (url: string, key: string) => {
  */
 export const signUpSupabaseAuth = async (email: string, password: string, displayName?: string) => {
   const client = getSupabaseClient();
-  if (!client) return null;
+  if (!client) {
+    console.warn('Supabase no está configurado (URL o ANON KEY faltante).');
+    return null;
+  }
 
   try {
     const { data, error } = await client.auth.signUp({
@@ -40,11 +47,13 @@ export const signUpSupabaseAuth = async (email: string, password: string, displa
     });
 
     if (error) {
-      console.warn('Supabase Auth signUp notice:', error.message);
+      console.warn('Aviso de registro en Supabase Auth:', error.message);
+    } else {
+      console.log('✅ Usuario registrado exitosamente en Supabase Auth:', data);
     }
     return data;
   } catch (err) {
-    console.warn('Error signing up user in Supabase Auth:', err);
+    console.warn('Error registrando usuario en Supabase Auth:', err);
     return null;
   }
 };
@@ -63,25 +72,27 @@ export const signInSupabaseAuth = async (email: string, password: string) => {
     });
 
     if (error) {
-      console.warn('Supabase Auth signIn notice:', error.message);
+      console.warn('Aviso de inicio de sesión en Supabase Auth:', error.message);
       return null;
     }
     return data;
   } catch (err) {
-    console.warn('Error signing in with Supabase Auth:', err);
+    console.warn('Error al iniciar sesión en Supabase Auth:', err);
     return null;
   }
 };
-
 
 /**
  * Sync user settings & plan to Supabase Cloud
  */
 export const syncUserSettingToCloud = async (setting: UserSettingRecord): Promise<boolean> => {
-  const url = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url');
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key');
+  const url = getSupabaseUrl();
+  const key = getSupabaseKey();
   
-  if (!url || !key) return false;
+  if (!url || !key) {
+    console.warn('Supabase URL/Key no configurados para sincronizar usuario.');
+    return false;
+  }
 
   try {
     const res = await fetch(`${url}/rest/v1/user_settings?on_conflict=user_id`, {
@@ -105,9 +116,15 @@ export const syncUserSettingToCloud = async (setting: UserSettingRecord): Promis
       })
     });
 
+    if (!res.ok) {
+      console.warn('Respuesta no exitosa al sincronizar user_settings:', res.status, res.statusText);
+    } else {
+      console.log('✅ Registro sincronizado en la tabla user_settings de Supabase.');
+    }
+
     return res.ok;
   } catch (err) {
-    console.warn('Error syncing settings to Supabase cloud:', err);
+    console.warn('Error al sincronizar configuración con Supabase Cloud:', err);
     return false;
   }
 };
@@ -116,8 +133,8 @@ export const syncUserSettingToCloud = async (setting: UserSettingRecord): Promis
  * Fetch latest user setting & plan from Supabase Cloud
  */
 export const fetchUserSettingFromCloud = async (userId: string): Promise<Partial<UserSettingRecord> | null> => {
-  const url = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url');
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key');
+  const url = getSupabaseUrl();
+  const key = getSupabaseKey();
 
   if (!url || !key) return null;
 
@@ -146,7 +163,7 @@ export const fetchUserSettingFromCloud = async (userId: string): Promise<Partial
     }
     return null;
   } catch (err) {
-    console.warn('Error fetching settings from Supabase cloud:', err);
+    console.warn('Error al consultar configuración desde Supabase Cloud:', err);
     return null;
   }
 };
@@ -155,8 +172,8 @@ export const fetchUserSettingFromCloud = async (userId: string): Promise<Partial
  * Fetch all registered accounts from Supabase Cloud (Admin view)
  */
 export const fetchAllCloudUsers = async (): Promise<UserSettingRecord[]> => {
-  const url = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url');
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_anon_key');
+  const url = getSupabaseUrl();
+  const key = getSupabaseKey();
 
   if (!url || !key) return [];
 
@@ -181,8 +198,9 @@ export const fetchAllCloudUsers = async (): Promise<UserSettingRecord[]> => {
       theme: row.theme || 'dark'
     }));
   } catch (err) {
-    console.warn('Error fetching all cloud users:', err);
+    console.warn('Error al consultar todos los usuarios de Supabase Cloud:', err);
     return [];
   }
 };
+
 
