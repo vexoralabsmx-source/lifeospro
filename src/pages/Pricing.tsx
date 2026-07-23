@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Check, Info, ShieldCheck, Sparkles } from 'lucide-react';
+import { Check, Info, ShieldCheck, Sparkles, Mail } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Dialog } from '../components/ui/Dialog';
 
@@ -246,8 +246,29 @@ export const Pricing: React.FC = () => {
 
       </div>
 
+      {/* Need Help Contact Banner */}
+      <Card variant="glass" className="p-4 border-amber-500/30 bg-amber-500/5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs select-none">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-amber-500/10 text-amber-500 rounded-xl shrink-0">
+            <Mail className="w-5 h-5 text-amber-400" />
+          </div>
+          <div>
+            <span className="font-bold text-text-primary">¿Necesitas ayuda con tu plan o compra?</span>
+            <p className="text-[11px] text-text-secondary mt-0.5">
+              Para dudas, soporte o ayuda con tu cuenta, contáctanos en <a href="mailto:contacto@vexoralabs.shop" className="text-amber-400 font-bold hover:underline">contacto@vexoralabs.shop</a>
+            </p>
+          </div>
+        </div>
+        <a 
+          href="mailto:contacto@vexoralabs.shop"
+          className="px-3.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl font-bold text-xs transition-all shrink-0 flex items-center gap-1.5 cursor-pointer"
+        >
+          <Mail className="w-3.5 h-3.5" /> contacto@vexoralabs.shop
+        </a>
+      </Card>
+
       {/* FAQs Panel Section */}
-      <Card className="p-6 mt-6 select-none">
+      <Card className="p-6 mt-2 select-none">
         <h3 className="font-heading font-black text-sm text-text-primary mb-4 flex items-center gap-1.5">
           <Info className="w-4.5 h-4.5 text-brand" /> Preguntas Frecuentes
         </h3>
